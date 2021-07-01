@@ -1,0 +1,90 @@
+; TODO: rename unlink() to _unlink() on Windows+MSVCRT (without gcc!)
+; doc from scheme/LISP: 
+;  let = let* !
+;   no named let, but...
+; doc lambda vs. fn
+
+(Project.config "title" "zConvertMd2Html.exe" ) ; this is needed on Windows with some compilers, but does not hurt otherwise
+;(Project.config "echo-compiler-cmd" true )      ; uncomment this line for debugging
+;(Project.config "cflag" "-Os")                 ; note: including -Os or -O3 will significantly increase compile time
+;(Project.config "compiler" "zig cc --target=x86_64-linux-musl")	; uncomment for really small executable
+;(Project.config "compiler" "tcc")							; uncomment for faster builds
+
+(Project.config "cflag" "-I lib/ lib/entity.c lib/md4c.c lib/md4c-html.c lib/Md2Html.c") 
+
+(relative-include "lib/Md2Html.h")
+(defmodule Md2Html
+  (register convert (Fn [(Ref String)] String))  )  ; here the actual conversion md->html is done
+
+(defn fancy-slice [data start end]
+  (let [slen   (String.length data)
+        wrap   (fn [pos max]
+                 (if (Int.< pos 0) (Int.+ max pos) pos) ) 
+        wstart (wrap start slen)
+        tmpend (wrap end   slen)
+        wend   (if (Int.< wstart tmpend) tmpend slen) ]
+    (String.slice data wstart wend) ))
+
+
+(defn change-links [sMarkdown]
+  (let-do [alltexts (Pattern.split            #"\[[^\[\]]-\]\([^\(\)]-\)"     sMarkdown) 
+           links    (Pattern.match-all-groups #"\[([^\[\]]-)\]\(([^\(\)]-)\)" sMarkdown) 
+           texts    (Array.rest &alltexts)                         ; => (Array String)
+           result   (Maybe.unsafe-from (Array.first &alltexts)) ]  ; => String
+    (while (not (Array.empty? &links))
+      (let-do [cur-link    (Array.unsafe-first &links)             ; => (ref (Array String))
+               cur-text    (Array.unsafe-first &texts)             ; => (ref String)
+               link-descr  (Array.unsafe-first cur-link)           ; => ...
+               link-ref    (Array.unsafe-last  cur-link)
+               ref-parts   &(String.split-by link-ref &[\#])      
+               link-file   (Array.unsafe-first ref-parts)
+               fname-base  &(fancy-slice link-file 0 -3)
+               link-anchor (Array.nth ref-parts 1)
+               lcasefile   &(String.ascii-to-lower link-file)
+               new-link    (if (or  (String.starts-with? lcasefile "http")
+                                    (String.starts-with? lcasefile "../")  
+                                    (not (String.ends-with? lcasefile ".md")) )
+                             (do ; not a reference to a local .md file => return unchanged match
+                               (IO.print "\tkept reference: ")
+                               (fmt "[%s](%s)" link-descr link-ref) )
+                             (do
+                                 (IO.print "\tchanged reference: ") 
+                                 (if (Maybe.nothing? &link-anchor)
+                                     (fmt "[%s](%s.html)"    link-descr fname-base)
+                                     (fmt "[%s](%s.html#%s)" link-descr fname-base &(Maybe.unsafe-from link-anchor)) )))]
+        (IO.println &new-link)       
+        (set! links (Array.rest &links))
+        (set! texts (Array.rest &texts))
+        (set! result (fmt "%s%s%s" &result &new-link cur-text)) ))
+    result ))
+
+
+(defn abort [error-code message]
+  (do
+    (IO.errorln message)
+    error-code ))
+(defn finish [message]
+  (do
+    (IO.println message)
+    0 ))
+
+(defn generate [fnInput fnOutput]
+  (let [  sInput? (IO.read-file fnInput)  ]
+  (if (Result.error? &sInput?)
+    (abort 2 &(fmt "error='%s' reading input from file='%s'" &(Result.unsafe-from-error sInput?) fnInput))
+    (let [sMd      (Result.unsafe-from-success sInput?) 
+          sModMd   (change-links &sMd)
+          sHtml    (Md2Html.convert &sModMd)
+          written? (IO.write-file &sHtml fnOutput) ]
+    (if (Result.error? &written?)
+      (abort 3 &(fmt "error='%s' writing output to file='%s'" &(Result.unsafe-from-error written?) fnOutput))
+      (finish  "\tdone :-)")  )))))
+
+(defn main []
+  (let [args (Int.- (StaticArray.length &System.args) 1) ]    ; 1st argument is executable!
+    (if (not (Int.= 2 args))
+      (abort 1 &(fmt "expecting exactly 2 arguments (got %d):\n\ttest2 input-file output-file" args))
+      (let-do [finput  (StaticArray.unsafe-nth &System.args 1)
+               foutput (StaticArray.unsafe-nth &System.args 2) ]
+        (IO.println &(fmt "converting '%s' to '%s'" finput foutput))
+        (generate finput foutput) ))))
