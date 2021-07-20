@@ -80,6 +80,12 @@
 (deftype (HitRecord a) [t a])
 (deftype (CurrentHit a) [hr (Maybe (HitRecord a))])
 
+;; create dependencies (deleters) for Map when only referring to it with 'the' (issue 1261)
+(deftype AType [s String])
+(defn weird [m]
+   (the (Map String AType) m))
+
+
 (deftest test
   (assert-equal test
                 1
