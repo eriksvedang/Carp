@@ -501,10 +501,13 @@ apply ctx@Context {contextInternalEnv = internal} body params args =
 
 -- | Parses a string and then converts the resulting forms to commands, which are evaluated in order.
 executeString :: Bool -> Bool -> Context -> String -> String -> IO Context
-executeString doCatch printResult ctx input fileName =
+executeString = executeStringAtLine 1
+
+executeStringAtLine :: Int -> Bool -> Bool -> Context -> String -> String -> IO Context
+executeStringAtLine line doCatch printResult ctx input fileName =
   if doCatch then catch exec (catcher ctx) else exec
   where
-    exec = case parse input fileName of
+    exec = case parseAtLine line input fileName of
       Left parseError ->
         let sourcePos = Parsec.errorPos parseError
             parseErrorXObj =

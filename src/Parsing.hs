@@ -2,6 +2,7 @@
 
 module Parsing
   ( parse,
+    parseAtLine,
     validCharacters,
     balance,
   )
@@ -599,10 +600,13 @@ lispSyntax = do
   Parsec.eof
   pure result
 
-parse :: String -> String -> Either Parsec.ParseError [XObj]
-parse text fileName =
-  let initState = ParseState (Info 1 1 fileName (Set.fromList []) 0)
+parseAtLine :: Int -> String -> String -> Either Parsec.ParseError [XObj]
+parseAtLine line text fileName =
+  let initState = ParseState (Info line 1 fileName (Set.fromList []) 0)
    in Parsec.runParser lispSyntax initState fileName text
+
+parse :: String -> String -> Either Parsec.ParseError [XObj]
+parse = parseAtLine 1
 
 {-# ANN balance "HLint: ignore Use String" #-}
 
